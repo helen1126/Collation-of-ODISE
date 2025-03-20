@@ -1,0 +1,1 @@
+include data/datasets/openseg_labels/*.txt
