@@ -28,15 +28,26 @@ from tabulate import tabulate
 
 class COCOEvaluator(_COCOEvaluator):
     def __init__(self, *, dataset_name, **kwargs):
+        """
+        初始化 COCOEvaluator 类。
+
+        参数:
+            dataset_name (str): 数据集的名称。
+            **kwargs: 传递给父类的其他关键字参数。
+        """
         super().__init__(dataset_name=dataset_name, **kwargs)
         self.dataset_name = dataset_name
 
     def evaluate(self, img_ids=None):
         """
-        Args:
-            img_ids: a list of image IDs to evaluate on. Default to None for the whole dataset
-        """
+        评估模型在指定图像 ID 上的性能。
 
+        参数:
+            img_ids (list, 可选): 要评估的图像 ID 列表。默认为 None，表示评估整个数据集。
+
+        返回:
+            OrderedDict: 包含评估结果的有序字典，键为数据集名称加上原始结果的键。
+        """
         results = super().evaluate(img_ids)
         prefix_results = OrderedDict()
         for k, v in results.items():
@@ -47,10 +58,23 @@ class COCOEvaluator(_COCOEvaluator):
 
 class COCOPanopticEvaluator(_COCOPanopticEvaluator):
     def __init__(self, *, dataset_name, **kwargs):
+        """
+        初始化 COCOPanopticEvaluator 类。
+
+        参数:
+            dataset_name (str): 数据集的名称。
+            **kwargs: 传递给父类的其他关键字参数。
+        """
         super().__init__(dataset_name=dataset_name, **kwargs)
         self.dataset_name = dataset_name
 
     def evaluate(self):
+        """
+        评估模型在全景分割任务上的性能。
+
+        返回:
+            OrderedDict: 包含评估结果的有序字典，键为数据集名称加上原始结果的键。如果结果为空，则返回 None。
+        """
         results = super().evaluate()
         if results is None:
             return
@@ -63,6 +87,14 @@ class COCOPanopticEvaluator(_COCOPanopticEvaluator):
 
 class SemSegEvaluator(_SemSegEvaluator):
     def __init__(self, *, dataset_name, prefix="", **kwargs):
+        """
+        初始化 SemSegEvaluator 类。
+
+        参数:
+            dataset_name (str): 数据集的名称。
+            prefix (str, 可选): 结果键的前缀。默认为空字符串。
+            **kwargs: 传递给父类的其他关键字参数。
+        """
         super().__init__(dataset_name=dataset_name, **kwargs)
         self.dataset_name = dataset_name
         if len(prefix) and not prefix.endswith("_"):
@@ -70,6 +102,12 @@ class SemSegEvaluator(_SemSegEvaluator):
         self.prefix = prefix
 
     def evaluate(self):
+        """
+        评估模型在语义分割任务上的性能。
+
+        返回:
+            OrderedDict: 包含评估结果的有序字典，键为数据集名称加上前缀和原始结果的键。如果结果为空，则返回 None。
+        """
         results = super().evaluate()
         if results is None:
             return
@@ -103,20 +141,20 @@ class SemSegEvaluator(_SemSegEvaluator):
 # modified from COCOEvaluator for instance segmentation
 class InstanceSegEvaluator(COCOEvaluator):
     """
-    Evaluate AR for object proposals, AP for instance detection/segmentation, AP
-    for keypoint detection outputs using COCO's metrics.
-    See http://cocodataset.org/#detection-eval and
-    http://cocodataset.org/#keypoints-eval to understand its metrics.
-    The metrics range from 0 to 100 (instead of 0 to 1), where a -1 or NaN means
-    the metric cannot be computed (e.g. due to no predictions made).
+    评估对象提议的 AR、实例检测/分割的 AP 以及关键点检测输出的 AP，使用 COCO 的指标。
+    请参阅 http://cocodataset.org/#detection-eval 和 http://cocodataset.org/#keypoints-eval 以了解其指标。
+    指标范围从 0 到 100（而不是 0 到 1），其中 -1 或 NaN 表示无法计算该指标（例如，由于没有进行预测）。
 
-    In addition to COCO, this evaluator is able to support any bounding box detection,
-    instance segmentation, or keypoint detection dataset.
+    除了 COCO，此评估器还能够支持任何边界框检测、实例分割或关键点检测数据集。
     """
 
     def _eval_predictions(self, predictions, img_ids=None):
         """
-        Evaluate predictions. Fill self._results with the metrics of the tasks.
+        评估预测结果。将任务的指标填充到 self._results 中。
+
+        参数:
+            predictions (list): 预测结果列表。
+            img_ids (list, 可选): 要评估的图像 ID 列表。默认为 None。
         """
         self._logger.info("Preparing results for COCO format ...")
         coco_results = list(itertools.chain(*[x["instances"] for x in predictions]))

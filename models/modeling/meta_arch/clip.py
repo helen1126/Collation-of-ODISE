@@ -27,6 +27,18 @@ EmbeddedImage = namedtuple("EmbedImageReturn", ["image_embed", "image_encodings"
 
 
 def build_clip_text_embed(clip_model_name, labels, device="cuda", verbose=True):
+    """
+    构建CLIP模型的文本嵌入。
+
+    参数:
+        clip_model_name (str or nn.Module): CLIP模型的名称或已加载的CLIP模型实例。
+        labels (list or str): 要嵌入的标签列表，每个标签可以是一个字符串或字符串列表。
+        device (str, optional): 模型运行的设备，默认为 "cuda"。
+        verbose (bool, optional): 是否打印详细信息，默认为 True。
+
+    返回:
+        torch.Tensor: 文本嵌入的张量。
+    """
     if isinstance(clip_model_name, str):
         clip, _, _ = open_clip.create_model_and_transforms(
             model_name=clip_model_name,
@@ -76,7 +88,13 @@ def build_clip_text_embed(clip_model_name, labels, device="cuda", verbose=True):
 # Modified from https://github.com/lucidrains/DALLE2-pytorch/blob/350a3d60456693a8ecdccc820e97dbb6b0c81866/dalle2_pytorch/dalle2_pytorch.py#L238 # noqa
 class ClipAdapter(nn.Module):
     def __init__(self, name="ViT-B-32", normalize=True):
+        """
+        初始化ClipAdapter类。
 
+        参数:
+            name (str, optional): CLIP模型的名称，默认为 "ViT-B-32"。
+            normalize (bool, optional): 是否对嵌入进行归一化，默认为 True。
+        """
         # download on local rank 0 first
         if comm.get_local_rank() == 0:
             open_clip.create_model_and_transforms(name, pretrained="openai")
@@ -97,14 +115,33 @@ class ClipAdapter(nn.Module):
         self.normalize = normalize
 
     def extra_repr(self) -> str:
+        """
+        返回额外的字符串表示信息。
+
+        返回:
+            str: 包含模型名称和归一化标志的字符串。
+        """
         return f"name={self.name}, normalize={self.normalize}"
 
     def _freeze(self):
+        """
+        冻结CLIP模型的参数，将其设置为评估模式。
+        """
         self.clip.eval()
         for p in self.clip.parameters():
             p.requires_grad = False
 
     def ignored_state_dict(self, destination=None, prefix=""):
+        """
+        返回忽略某些模块的状态字典。
+
+        参数:
+            destination (OrderedDict, optional): 存储状态字典的目标对象，默认为 None。
+            prefix (str, optional): 键的前缀，默认为 ""。
+
+        返回:
+            OrderedDict: 忽略某些模块后的状态字典。
+        """
         if destination is None:
             destination = OrderedDict()
             destination._metadata = OrderedDict()
@@ -115,23 +152,61 @@ class ClipAdapter(nn.Module):
 
     @property
     def device(self):
+        """
+        获取模型所在的设备。
+
+        返回:
+            torch.device: 模型所在的设备。
+        """
         return next(self.parameters()).device
 
     # don't save clip model
     def state_dict(self, destination=None, prefix="", keep_vars=False):
+        """
+        返回空的状态字典，不保存CLIP模型的参数。
+
+        参数:
+            destination (OrderedDict, optional): 存储状态字典的目标对象，默认为 None。
+            prefix (str, optional): 键的前缀，默认为 ""。
+            keep_vars (bool, optional): 是否保留变量，默认为 False。
+
+        返回:
+            OrderedDict: 空的状态字典。
+        """
         return OrderedDict()
 
     def train(self, mode: bool = True):
+        """
+        设置模型的训练模式，并冻结CLIP模型的参数。
+
+        参数:
+            mode (bool, optional): 是否为训练模式，默认为 True。
+
+        返回:
+            ClipAdapter: 自身实例。
+        """
         super().train(mode)
         self._freeze()
         return self
 
     @property
     def dim_latent(self):
+        """
+        获取CLIP模型文本投影的维度。
+
+        返回:
+            int: 文本投影的维度。
+        """
         return self.clip.text_projection.shape[-1]
 
     @property
     def image_size(self):
+        """
+        获取CLIP模型输入图像的尺寸。
+
+        返回:
+            tuple: 图像的高度和宽度。
+        """
         if isinstance(self.clip.visual.image_size, tuple):
             return self.clip.visual.image_size
         else:
@@ -139,13 +214,34 @@ class ClipAdapter(nn.Module):
 
     @property
     def image_channels(self):
+        """
+        获取CLIP模型输入图像的通道数。
+
+        返回:
+            int: 图像的通道数。
+        """
         return 3
 
     @property
     def max_text_len(self):
+        """
+        获取CLIP模型的最大文本长度。
+
+        返回:
+            int: 最大文本长度。
+        """
         return self.clip.context_length
 
     def _encode_text(self, text):
+        """
+        对输入的文本进行编码。
+
+        参数:
+            text (torch.Tensor): 输入的文本张量。
+
+        返回:
+            tuple: 文本嵌入和文本编码的张量。
+        """
         x = self.clip.token_embedding(text)  # [batch_size, n_ctx, d_model]
         x = x + self.clip.positional_embedding
         x = x.permute(1, 0, 2)  # NLD -> LND
@@ -162,6 +258,15 @@ class ClipAdapter(nn.Module):
 
     @torch.no_grad()
     def embed_text(self, captions):
+        """
+        对输入的文本进行嵌入处理。
+
+        参数:
+            captions (list): 输入的文本列表。
+
+        返回:
+            EmbeddedText: 包含文本嵌入、文本编码和文本掩码的命名元组。
+        """
         text = open_clip.tokenize(captions).to(next(self.parameters()).device)
         text = text[..., : self.max_text_len]
         text_mask = (text != 0).long()
@@ -175,6 +280,15 @@ class ClipAdapter(nn.Module):
             return EmbeddedText(text_embed.float(), text_encodings.float(), text_mask)
 
     def _encode_image(self, image):
+        """
+        对输入的图像进行编码。
+
+        参数:
+            image (torch.Tensor): 输入的图像张量。
+
+        返回:
+            tuple: 图像嵌入和图像编码的张量。
+        """
         if hasattr(self.clip.visual, "positional_embedding"):
             x = self.clip.visual.conv1(image)  # shape = [*, width, grid, grid]
             x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
@@ -224,6 +338,15 @@ class ClipAdapter(nn.Module):
 
     @torch.no_grad()
     def embed_image(self, image):
+        """
+        对输入的图像进行嵌入处理。
+
+        参数:
+            image (torch.Tensor): 输入的图像张量。
+
+        返回:
+            EmbeddedImage: 包含图像嵌入和图像编码的命名元组。
+        """
         image_embed, image_encodings = self._encode_image(self.clip_preprocess(image))
         if self.normalize:
             return EmbeddedImage(F.normalize(image_embed.float(), dim=-1), image_encodings)
@@ -232,6 +355,15 @@ class ClipAdapter(nn.Module):
 
     @torch.no_grad()
     def build_text_embed(self, labels):
+        """
+        构建文本嵌入。
+
+        参数:
+            labels (list): 要嵌入的标签列表。
+
+        返回:
+            torch.Tensor: 文本嵌入的张量。
+        """
         return build_clip_text_embed(self.clip, labels)
 
 
@@ -242,14 +374,37 @@ class MaskCLIP(ClipAdapter):
     """
 
     def __init__(self, name="ViT-L-14-336"):
+        """
+        初始化MaskCLIP类。
+
+        参数:
+            name (str, optional): CLIP模型的名称，默认为 "ViT-L-14-336"。
+        """
         super().__init__(name=name, normalize=False)
 
     @property
     def logit_scale(self):
+        """
+        获取对数比例因子。
+
+        返回:
+            torch.Tensor: 对数比例因子。
+        """
         logit_scale = torch.clamp(self.clip.logit_scale.exp(), max=100)
         return logit_scale
 
     def _mask_clip_forward(self, x: torch.Tensor, attn_mask: torch.Tensor, num_mask_tokens: int):
+        """
+        MaskCLIP的前向传播函数。
+
+        参数:
+            x (torch.Tensor): 输入的张量。
+            attn_mask (torch.Tensor): 注意力掩码。
+            num_mask_tokens (int): 掩码标记的数量。
+
+        返回:
+            torch.Tensor: 输出的张量。
+        """
         x = self.clip.visual.conv1(x)  # shape = [*, width, grid, grid]
         x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
         x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
@@ -280,6 +435,16 @@ class MaskCLIP(ClipAdapter):
         return x
 
     def encode_image_with_mask(self, image, mask):
+        """
+        使用掩码对图像进行编码。
+
+        参数:
+            image (torch.Tensor): 输入的图像张量。
+            mask (torch.Tensor): 输入的掩码张量。
+
+        返回:
+            torch.Tensor: 编码后的掩码嵌入张量，形状为 [B, Q, C]。
+        """
         assert hasattr(self.clip.visual, "positional_embedding")
         image = self.clip_preprocess(image)
         batch_size = image.shape[0]
@@ -323,7 +488,16 @@ class MaskCLIP(ClipAdapter):
         return self._mask_clip_forward(image, attn_mask, num_mask_token)
 
     def get_mask_embed(self, image, mask):
+        """
+        获取掩码嵌入。
 
+        参数:
+            image (torch.Tensor): 输入的图像张量。
+            mask (torch.Tensor): 输入的掩码张量。
+
+        返回:
+            torch.Tensor: 掩码嵌入张量，形状为 [B, Q, C]。
+        """
         image = F.interpolate(
             image,
             size=self.image_size,
@@ -338,6 +512,17 @@ class MaskCLIP(ClipAdapter):
         return mask_embed
 
     def pred_logits(self, mask_embed, text_embed, labels):
+        """
+        预测对数概率。
+
+        参数:
+            mask_embed (torch.Tensor): 掩码嵌入张量，形状为 [B, Q, C]。
+            text_embed (torch.Tensor): 文本嵌入张量，形状为 [N, C]。
+            labels (list): 标签列表。
+
+        返回:
+            torch.Tensor: 预测的对数概率张量，形状为 [B, Q, N]。
+        """
         logit_per_mask = (
             torch.einsum(
                 "bqc,nc->bqn", F.normalize(mask_embed, dim=-1), F.normalize(text_embed, dim=-1)
@@ -350,7 +535,18 @@ class MaskCLIP(ClipAdapter):
         return logit_per_mask
 
     def forward(self, image, mask, text_embed, labels):
+        """
+        模型的前向传播函数。
 
+        参数:
+            image (torch.Tensor): 输入的图像张量。
+            mask (torch.Tensor): 输入的掩码张量。
+            text_embed (torch.Tensor): 文本嵌入张量。
+            labels (list): 标签列表。
+
+        返回:
+            dict: 包含掩码嵌入和预测的开放集对数概率的字典。
+        """
         mask_embed = self.get_mask_embed(image, mask)
         output = {"mask_embed": mask_embed}
 

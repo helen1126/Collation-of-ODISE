@@ -89,6 +89,16 @@ LVIS_COLORS = list(
 
 
 def get_nouns(caption, with_preposition):
+    """
+    从给定的描述中提取名词或名词短语。
+
+    参数:
+        caption (str): 包含文本的描述。
+        with_preposition (bool): 是否包含介词。如果为 True，则考虑包含介词的名词短语。
+
+    返回:
+        list: 提取的名词或名词短语列表。
+    """
     if with_preposition:
         # Taken from Su Nam Kim Paper...
         grammar = r"""
@@ -137,12 +147,13 @@ def get_nouns(caption, with_preposition):
 class VisualizationDemo(object):
     def __init__(self, model, metadata, aug, instance_mode=ColorMode.IMAGE):
         """
-        Args:
-            model (nn.Module):
-            metadata (MetadataCatalog): image metadata.
-            instance_mode (ColorMode):
-            parallel (bool): whether to run the model in different processes from visualization.
-                Useful since the visualization logic can be slow.
+        初始化 VisualizationDemo 类，用于对模型的预测结果进行可视化。
+
+        参数:
+            model (nn.Module): 用于预测的模型。
+            metadata (MetadataCatalog): 图像的元数据，包含类别信息等。
+            aug: 图像增强器，用于对输入图像进行预处理。
+            instance_mode (ColorMode): 实例可视化模式，默认为 ColorMode.IMAGE。
         """
         self.model = model
         self.metadata = metadata
@@ -152,13 +163,14 @@ class VisualizationDemo(object):
 
     def predict(self, original_image):
         """
-        Args:
-            original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
+        对输入的原始图像进行预测。
 
-        Returns:
-            predictions (dict):
-                the output of the model for one image only.
-                See :doc:`/tutorials/models` for details about the format.
+        参数:
+            original_image (np.ndarray): 形状为 (H, W, C) 的图像，采用 BGR 顺序，这是 OpenCV 使用的格式。
+
+        返回:
+            predictions (dict): 模型对单张图像的输出结果。
+                具体格式请参考 :doc:`/tutorials/models`。
         """
         height, width = original_image.shape[:2]
         aug_input = T.AugInput(original_image, sem_seg=None)
@@ -172,12 +184,14 @@ class VisualizationDemo(object):
 
     def run_on_image(self, image):
         """
-        Args:
-            image (np.ndarray): an image of shape (H, W, C) (in BGR order).
-                This is the format used by OpenCV.
-        Returns:
-            predictions (dict): the output of the model.
-            vis_output (VisImage): the visualized image output.
+        在输入图像上运行模型并进行可视化。
+
+        参数:
+            image (np.ndarray): 形状为 (H, W, C) 的图像，采用 BGR 顺序，这是 OpenCV 使用的格式。
+
+        返回:
+            predictions (dict): 模型的输出结果。
+            vis_output (VisImage): 可视化后的图像输出。
         """
         vis_output = None
         predictions = self.predict(image)
@@ -199,6 +213,15 @@ class VisualizationDemo(object):
         return predictions, vis_output
 
     def _frame_from_video(self, video):
+        """
+        从视频中逐帧读取图像。
+
+        参数:
+            video (cv2.VideoCapture): 视频捕获对象。
+
+        生成器:
+            ndarray: 视频的每一帧图像。
+        """
         while video.isOpened():
             success, frame = video.read()
             if success:
@@ -208,18 +231,27 @@ class VisualizationDemo(object):
 
     def run_on_video(self, video):
         """
-        Visualizes predictions on frames of the input video.
+        对视频的每一帧进行预测并可视化结果。
 
-        Args:
-            video (cv2.VideoCapture): a :class:`VideoCapture` object, whose source can be
-                either a webcam or a video file.
+        参数:
+            video (cv2.VideoCapture): 视频捕获对象，可以是摄像头或视频文件。
 
-        Yields:
-            ndarray: BGR visualizations of each video frame.
+        生成器:
+            ndarray: 每一帧的可视化结果，采用 BGR 格式。
         """
         video_visualizer = VideoVisualizer(self.metadata, self.instance_mode)
 
         def process_predictions(frame, predictions):
+            """
+            处理预测结果并进行可视化。
+
+            参数:
+                frame (np.ndarray): 视频的一帧图像。
+                predictions (dict): 模型的预测结果。
+
+            返回:
+                ndarray: 可视化后的图像，采用 BGR 格式。
+            """
             if "panoptic_seg" in predictions:
                 panoptic_seg, segments_info = predictions["panoptic_seg"]
                 vis_frame = video_visualizer.draw_panoptic_seg_predictions(
@@ -244,6 +276,16 @@ class VisualizationDemo(object):
 
 
 def test_opencv_video_format(codec, file_ext):
+    """
+    测试 OpenCV 是否支持指定的视频编码格式。
+
+    参数:
+        codec (str): 视频编码格式，如 'x264' 或 'mp4v'。
+        file_ext (str): 视频文件的扩展名，如 '.mkv' 或 '.mp4'。
+
+    返回:
+        bool: 如果支持指定的编码格式，则返回 True；否则返回 False。
+    """
     with tempfile.TemporaryDirectory(prefix="video_format_test") as dir:
         filename = os.path.join(dir, "test_file" + file_ext)
         writer = cv2.VideoWriter(
@@ -258,7 +300,7 @@ def test_opencv_video_format(codec, file_ext):
         if os.path.isfile(filename):
             return True
         return False
-
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ODISE demo.")

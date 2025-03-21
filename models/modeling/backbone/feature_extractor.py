@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 
 
 class FeatureExtractorBackbone(Backbone):
-    """Backbone implement following for FeatureExtractor
-
+    """
+    Backbone implement following for FeatureExtractor
     1. Project same group features into the one single feature map
     2. Sort the features by area, from large to small
     3. Get the stride of each feature map
@@ -46,6 +46,20 @@ class FeatureExtractorBackbone(Backbone):
         use_checkpoint: bool = False,
         slide_training: bool = False,
     ):
+        """
+        初始化 FeatureExtractorBackbone 类。
+
+        参数:
+            feature_extractor (FeatureExtractor): 特征提取器实例。
+            out_features (List[str]): 输出特征的名称列表。
+            backbone_in_size (Union[int, Tuple[int]], 可选): 输入图像的大小。可以是单个整数或元组。默认为 (512, 512)。
+            min_stride (int, 可选): 最小步长。默认为 4。
+            max_stride (int, 可选): 最大步长。默认为 32。
+            projection_dim (int, 可选): 投影维度。默认为 512。
+            num_res_blocks (int, 可选): 残差块的数量。默认为 1。
+            use_checkpoint (bool, 可选): 是否使用检查点以节省内存。默认为 False。
+            slide_training (bool, 可选): 是否使用滑动训练。默认为 False。
+        """
         super().__init__()
         self.feature_extractor = feature_extractor
         self.use_checkpoint = use_checkpoint
@@ -125,9 +139,25 @@ class FeatureExtractorBackbone(Backbone):
 
     @property
     def size_divisibility(self) -> int:
+        """
+        获取大小可整除性的值。
+
+        返回:
+            int: 大小可整除性的值，这里固定为 64。
+        """
         return 64
 
     def ignored_state_dict(self, destination=None, prefix=""):
+        """
+        获取忽略的状态字典。
+
+        参数:
+            destination (OrderedDict, 可选): 目标字典。默认为 None。
+            prefix (str, 可选): 键的前缀。默认为 ""。
+
+        返回:
+            OrderedDict: 忽略的状态字典。
+        """
         if destination is None:
             destination = OrderedDict()
             destination._metadata = OrderedDict()
@@ -137,7 +167,15 @@ class FeatureExtractorBackbone(Backbone):
         return destination
 
     def single_forward(self, img):
+        """
+        单步前向传播。
 
+        参数:
+            img (torch.Tensor): 输入图像。
+
+        返回:
+            dict: 输出特征字典。
+        """
         # save memory
         input_image_size = img.shape[-2:]
         # print("input_image_size:", img.shape)
@@ -155,6 +193,16 @@ class FeatureExtractorBackbone(Backbone):
             return self.forward_features(features, input_image_size)
 
     def forward_features(self, features, input_image_size):
+        """
+        前向传播特征。
+
+        参数:
+            features (dict): 输入特征字典。
+            input_image_size (tuple): 输入图像的大小。
+
+        返回:
+            dict: 输出特征字典。
+        """
         output_features = {}
         for name, indices in zip(self._out_features, self._sorted_grouped_indices):
             output_feature = None
@@ -179,7 +227,15 @@ class FeatureExtractorBackbone(Backbone):
         return output_features
 
     def slide_forward(self, img):
+        """
+        滑动前向传播。
 
+        参数:
+            img (torch.Tensor): 输入图像。
+
+        返回:
+            dict: 输出特征字典。
+        """
         batch_size, _, h_img, w_img = img.shape
         # output_features = {k: torch.zeros_like(v) for k, v in self.single_forward(img).items()}
         output_features = {}
@@ -250,6 +306,15 @@ class FeatureExtractorBackbone(Backbone):
         return output_features
 
     def forward(self, img):
+        """
+        前向传播。
+
+        参数:
+            img (torch.Tensor): 输入图像。
+
+        返回:
+            dict: 输出特征字典。
+        """
         if (self.training and not self._slide_training) or not self._slide_inference:
             return self.single_forward(img)
         else:

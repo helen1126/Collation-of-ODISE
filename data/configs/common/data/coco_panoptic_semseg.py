@@ -21,7 +21,7 @@ from detectron2.config import LazyCall as L
 from detectron2.data import get_detection_dataset_dicts
 from detectron2.data import DatasetMapper
 
-from models.data import (
+from data import (
     COCOPanopticDatasetMapper,
     build_d2_test_dataloader,
     build_d2_train_dataloader,

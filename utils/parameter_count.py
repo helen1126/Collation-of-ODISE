@@ -106,6 +106,15 @@ def parameter_count_table(
     table: typing.List[typing.Tuple] = []
 
     def format_size(x: int) -> str:
+        """
+        Format the number of elements into a human - readable string.
+
+        Args:
+            x (int): The number of elements.
+
+        Returns:
+            str: A string representing the number of elements in a more readable format (e.g., "1.2M", "5.3K").
+        """
         if x > 1e8:
             return "{:.1f}G".format(x / 1e9)
         if x > 1e5:
@@ -115,6 +124,13 @@ def parameter_count_table(
         return str(x)
 
     def fill(lvl: int, prefix: str) -> None:
+        """
+        Recursively fill the table with parameter counts and shapes up to a certain depth.
+
+        Args:
+            lvl (int): The current level of recursion.
+            prefix (str): The prefix of the current module or parameter name.
+        """
         if lvl >= max_depth:
             return
         for name, v in count.items():

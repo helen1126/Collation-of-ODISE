@@ -26,11 +26,11 @@ from mask2former.data.datasets.register_ade20k_panoptic import ADE20K_150_CATEGO
 from PIL import Image
 from torch.cuda.amp import autocast
 
-from odise import model_zoo
-from odise.checkpoint import ODISECheckpointer
-from odise.config import instantiate_odise
-from odise.data import get_openseg_labels
-from odise.modeling.wrapper import OpenPanopticInference
+from models import model_zoo
+from models.checkpoint import ODISECheckpointer
+from models.config import instantiate_odise
+from data import get_openseg_labels
+from models.modeling.wrapper import OpenPanopticInference
 
 setup_logger()
 logger = setup_logger(name="odise")
@@ -71,12 +71,13 @@ LVIS_COLORS = list(
 class VisualizationDemo(object):
     def __init__(self, model, metadata, aug, instance_mode=ColorMode.IMAGE):
         """
-        Args:
-            model (nn.Module):
-            metadata (MetadataCatalog): image metadata.
-            instance_mode (ColorMode):
-            parallel (bool): whether to run the model in different processes from visualization.
-                Useful since the visualization logic can be slow.
+        初始化 VisualizationDemo 类的实例。
+
+        参数:
+        model (nn.Module): 用于预测的模型。
+        metadata (MetadataCatalog): 图像的元数据。
+        aug: 图像增强器。
+        instance_mode (ColorMode): 实例可视化模式，默认为 ColorMode.IMAGE。
         """
         self.model = model
         self.metadata = metadata
@@ -86,13 +87,14 @@ class VisualizationDemo(object):
 
     def predict(self, original_image):
         """
-        Args:
-            original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
+        对输入的图像进行预测。
 
-        Returns:
-            predictions (dict):
-                the output of the model for one image only.
-                See :doc:`/tutorials/models` for details about the format.
+        参数:
+        original_image (np.ndarray): 形状为 (H, W, C) 的图像（BGR 顺序）。
+
+        返回:
+        predictions (dict): 模型对单张图像的输出结果。
+            具体格式请参考 :doc:`/tutorials/models`。
         """
         height, width = original_image.shape[:2]
         aug_input = T.AugInput(original_image, sem_seg=None)
@@ -109,12 +111,14 @@ class VisualizationDemo(object):
 
     def run_on_image(self, image):
         """
-        Args:
-            image (np.ndarray): an image of shape (H, W, C) (in BGR order).
-                This is the format used by OpenCV.
-        Returns:
-            predictions (dict): the output of the model.
-            vis_output (VisImage): the visualized image output.
+        在输入图像上运行模型并进行可视化。
+
+        参数:
+        image (np.ndarray): 形状为 (H, W, C) 的图像（BGR 顺序），使用 OpenCV 格式。
+
+        返回:
+        predictions (dict): 模型的输出结果。
+        vis_output (VisImage): 可视化后的图像输出。
         """
         vis_output = None
         predictions = self.predict(image)
@@ -134,6 +138,101 @@ class VisualizationDemo(object):
                 vis_output = visualizer.draw_instance_predictions(predictions=instances)
 
         return predictions, vis_output
+
+
+def build_demo_classes_and_metadata(vocab, label_list):
+    """
+    根据用户输入的额外词汇和类别列表，构建演示所需的类别和元数据。
+
+    参数:
+    vocab (str): 用户输入的额外词汇，格式为 'a1,a2;b1,b2'，其中 a1,a2 是第一类的同义词。
+    label_list (list): 用户选择的类别列表，如 ["COCO (133 categories)", "ADE (150 categories)"]。
+
+    返回:
+    demo_classes (list): 演示所需的所有类别。
+    demo_metadata (MetadataCatalog): 演示所需的元数据。
+    """
+    extra_classes = []
+
+    if vocab:
+        for words in vocab.split(";"):
+            extra_classes.append([word.strip() for word in words.split(",")])
+    extra_colors = [random_color(rgb=True, maximum=1) for _ in range(len(extra_classes))]
+
+    demo_thing_classes = extra_classes
+    demo_stuff_classes = []
+    demo_thing_colors = extra_colors
+    demo_stuff_colors = []
+
+    if any("COCO" in label for label in label_list):
+        demo_thing_classes += COCO_THING_CLASSES
+        demo_stuff_classes += COCO_STUFF_CLASSES
+        demo_thing_colors += COCO_THING_COLORS
+        demo_stuff_colors += COCO_STUFF_COLORS
+    if any("ADE" in label for label in label_list):
+        demo_thing_classes += ADE_THING_CLASSES
+        demo_stuff_classes += ADE_STUFF_CLASSES
+        demo_thing_colors += ADE_THING_COLORS
+        demo_stuff_colors += ADE_STUFF_COLORS
+    if any("LVIS" in label for label in label_list):
+        demo_thing_classes += LVIS_CLASSES
+        demo_thing_colors += LVIS_COLORS
+
+    MetadataCatalog.pop("odise_demo_metadata", None)
+    demo_metadata = MetadataCatalog.get("odise_demo_metadata")
+    demo_metadata.thing_classes = [c[0] for c in demo_thing_classes]
+    demo_metadata.stuff_classes = [
+        *demo_metadata.thing_classes,
+        *[c[0] for c in demo_stuff_classes],
+    ]
+    demo_metadata.thing_colors = demo_thing_colors
+    demo_metadata.stuff_colors = demo_thing_colors + demo_stuff_colors
+    demo_metadata.stuff_dataset_id_to_contiguous_id = {
+        idx: idx for idx in range(len(demo_metadata.stuff_classes))
+    }
+    demo_metadata.thing_dataset_id_to_contiguous_id = {
+        idx: idx for idx in range(len(demo_metadata.thing_classes))
+    }
+
+    demo_classes = demo_thing_classes + demo_stuff_classes
+
+    return demo_classes, demo_metadata
+
+
+def inference(image_path, vocab, label_list, model_name):
+    """
+    对输入图像进行推理并可视化结果。
+
+    参数:
+    image_path (str): 输入图像的文件路径。
+    vocab (str): 用户输入的额外词汇，格式为 'a1,a2;b1,b2'。
+    label_list (list): 用户选择的类别列表。
+    model_name (str): 要使用的模型名称，如 "ODISE(Label)" 或 "ODISE(Caption)"。
+
+    返回:
+    Image: 可视化后的图像。
+    """
+    logger.info("building class names")
+    demo_classes, demo_metadata = build_demo_classes_and_metadata(vocab, label_list)
+    if model_name is None:
+        model_name = "ODISE(Label)"
+    with ExitStack() as stack:
+        logger.info(f"loading model {model_name}")
+        inference_model = OpenPanopticInference(
+            model=models[model_name],
+            labels=demo_classes,
+            metadata=demo_metadata,
+            semantic_on=False,
+            instance_on=False,
+            panoptic_on=True,
+        )
+        stack.enter_context(inference_context(inference_model))
+        stack.enter_context(torch.no_grad())
+
+        demo = VisualizationDemo(inference_model, demo_metadata, aug)
+        img = utils.read_image(image_path, format="RGB")
+        _, visualized_output = demo.run_on_image(img)
+        return Image.fromarray(visualized_output.get_image())
 
 
 models = {}
@@ -193,79 +292,6 @@ examples = [
         ["COCO (133 categories)"],
     ],
 ]
-
-
-def build_demo_classes_and_metadata(vocab, label_list):
-    extra_classes = []
-
-    if vocab:
-        for words in vocab.split(";"):
-            extra_classes.append([word.strip() for word in words.split(",")])
-    extra_colors = [random_color(rgb=True, maximum=1) for _ in range(len(extra_classes))]
-
-    demo_thing_classes = extra_classes
-    demo_stuff_classes = []
-    demo_thing_colors = extra_colors
-    demo_stuff_colors = []
-
-    if any("COCO" in label for label in label_list):
-        demo_thing_classes += COCO_THING_CLASSES
-        demo_stuff_classes += COCO_STUFF_CLASSES
-        demo_thing_colors += COCO_THING_COLORS
-        demo_stuff_colors += COCO_STUFF_COLORS
-    if any("ADE" in label for label in label_list):
-        demo_thing_classes += ADE_THING_CLASSES
-        demo_stuff_classes += ADE_STUFF_CLASSES
-        demo_thing_colors += ADE_THING_COLORS
-        demo_stuff_colors += ADE_STUFF_COLORS
-    if any("LVIS" in label for label in label_list):
-        demo_thing_classes += LVIS_CLASSES
-        demo_thing_colors += LVIS_COLORS
-
-    MetadataCatalog.pop("odise_demo_metadata", None)
-    demo_metadata = MetadataCatalog.get("odise_demo_metadata")
-    demo_metadata.thing_classes = [c[0] for c in demo_thing_classes]
-    demo_metadata.stuff_classes = [
-        *demo_metadata.thing_classes,
-        *[c[0] for c in demo_stuff_classes],
-    ]
-    demo_metadata.thing_colors = demo_thing_colors
-    demo_metadata.stuff_colors = demo_thing_colors + demo_stuff_colors
-    demo_metadata.stuff_dataset_id_to_contiguous_id = {
-        idx: idx for idx in range(len(demo_metadata.stuff_classes))
-    }
-    demo_metadata.thing_dataset_id_to_contiguous_id = {
-        idx: idx for idx in range(len(demo_metadata.thing_classes))
-    }
-
-    demo_classes = demo_thing_classes + demo_stuff_classes
-
-    return demo_classes, demo_metadata
-
-
-def inference(image_path, vocab, label_list, model_name):
-
-    logger.info("building class names")
-    demo_classes, demo_metadata = build_demo_classes_and_metadata(vocab, label_list)
-    if model_name is None:
-        model_name = "ODISE(Label)"
-    with ExitStack() as stack:
-        logger.info(f"loading model {model_name}")
-        inference_model = OpenPanopticInference(
-            model=models[model_name],
-            labels=demo_classes,
-            metadata=demo_metadata,
-            semantic_on=False,
-            instance_on=False,
-            panoptic_on=True,
-        )
-        stack.enter_context(inference_context(inference_model))
-        stack.enter_context(torch.no_grad())
-
-        demo = VisualizationDemo(inference_model, demo_metadata, aug)
-        img = utils.read_image(image_path, format="RGB")
-        _, visualized_output = demo.run_on_image(img)
-        return Image.fromarray(visualized_output.get_image())
 
 
 with gr.Blocks(title=title) as demo:

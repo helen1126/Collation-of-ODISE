@@ -13,7 +13,28 @@ import torch
 
 
 def batched_input_to_device(batched_inputs, device, exclude=()):
+    """
+    将批量输入数据移动到指定的设备上。
 
+    该函数递归地处理不同类型的批量输入数据，包括张量、映射（如字典）和序列（如列表），
+    并将其移动到指定的设备（如GPU）上。可以指定要排除的键，这些键对应的数据将不会被移动。
+
+    参数:
+    batched_inputs (torch.Tensor or collections.abc.Mapping or collections.abc.Sequence or str):
+        批量输入数据，可以是张量、映射（如字典）、序列（如列表）或字符串。
+    device (torch.device):
+        目标设备，数据将被移动到该设备上。
+    exclude (str or tuple of str, 可选):
+        要排除的键的列表或单个键。对应这些键的数据将不会被移动到目标设备。默认为空元组。
+
+    返回:
+    torch.Tensor or collections.abc.Mapping or collections.abc.Sequence or str:
+        移动到指定设备后的批量输入数据。
+
+    异常:
+    TypeError:
+        如果输入数据的类型不被支持，将抛出此异常。
+    """
     if isinstance(exclude, str):
         exclude = [exclude]
 

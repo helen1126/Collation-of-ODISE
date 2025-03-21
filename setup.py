@@ -38,8 +38,8 @@ def get_model_zoo_configs() -> List[str]:
     """
 
     # Use absolute paths while symlinking.
-    source_configs_dir = path.join(path.dirname(path.realpath(__file__)), "configs")
-    destination = path.join(path.dirname(path.realpath(__file__)), "odise", "model_zoo", "configs")
+    source_configs_dir = path.join(path.dirname(path.realpath(__file__)), "models.configs")
+    destination = path.join(path.dirname(path.realpath(__file__)), "models", "models.model_zoo", "models.configs")
     # Symlink the config directory inside package to have a cleaner pip install.
 
     # Remove stale symlink/directory from a previous build.
@@ -69,7 +69,7 @@ setup(
     url="https://github.com/NVlabs/ODISE",
     description="Open-vocabulary DIffusion-based Panoptic Segmentation",
     packages=find_packages(exclude=("configs", "tests*")),
-    package_data={"odise.model_zoo": get_model_zoo_configs()},
+    package_data={"models.model_zoo": get_model_zoo_configs()},
     python_requires=">=3.8",
     install_requires=[
         "timm==0.6.11",  # freeze timm version for stabliity

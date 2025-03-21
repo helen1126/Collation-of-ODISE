@@ -120,6 +120,16 @@ def dist_collect(tensor):
 
 class ODISE(MaskFormer):
     def ignored_state_dict(self, destination=None, prefix=""):
+        """
+        获取模型中需要忽略的状态字典。
+
+        参数:
+        destination (OrderedDict, 可选): 用于存储忽略状态字典的目标字典。默认为 None。
+        prefix (str, 可选): 状态字典键的前缀。默认为空字符串。
+
+        返回:
+        OrderedDict: 包含需要忽略的状态字典。
+        """
         if destination is None:
             destination = OrderedDict()
             destination._metadata = OrderedDict()
@@ -131,6 +141,12 @@ class ODISE(MaskFormer):
         return destination
 
     def _open_state_dict(self):
+        """
+        获取模型的开放状态字典。
+
+        返回:
+        dict: 包含模型开放状态的字典，如语义分割头的类别数量、元数据等。
+        """
         return {
             "sem_seg_head.num_classes": self.sem_seg_head.num_classes,
             "metadata": self.metadata,
@@ -141,10 +157,27 @@ class ODISE(MaskFormer):
         }
 
     def _save_open_state_dict(self, destination, prefix):
+        """
+        将模型的开放状态字典保存到指定的目标字典中。
+
+        参数:
+        destination (OrderedDict): 用于存储开放状态字典的目标字典。
+        prefix (str): 状态字典键的前缀。
+        """
         for k, v in self._open_state_dict().items():
             destination[prefix + k] = v
 
     def open_state_dict(self, destination=None, prefix=""):
+        """
+        获取并保存模型的开放状态字典。
+
+        参数:
+        destination (OrderedDict, 可选): 用于存储开放状态字典的目标字典。默认为 None。
+        prefix (str, 可选): 状态字典键的前缀。默认为空字符串。
+
+        返回:
+        OrderedDict: 包含模型开放状态的字典。
+        """
         if destination is None:
             destination = OrderedDict()
         self._save_open_state_dict(destination, prefix)
@@ -156,6 +189,15 @@ class ODISE(MaskFormer):
         return destination
 
     def load_open_state_dict(self, state_dict: Mapping[str, Any]):
+        """
+        加载模型的开放状态字典。
+
+        参数:
+        state_dict (Mapping[str, Any]): 包含模型开放状态的字典。
+
+        异常:
+        AssertionError: 如果状态字典中的某个键值对加载不正确，将抛出此异常。
+        """
         for k, v in state_dict.items():
             # handle nested modules
             if len(k.rsplit(".", 1)) == 2:
@@ -372,81 +414,19 @@ class CategoryODISE(ODISE):
             return processed_results
 
 
-class CaptionODISE(ODISE):
+class CategoryODISE(ODISE):
     def __init__(
         self,
         *,
-        word_head=None,
+        category_head=None,
         clip_head=None,
-        grounding_criterion=None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
-        self.word_head = word_head
-        self.clip_head = clip_head
+        pass  # function body is omitted
 
-        self.grounding_criterion = grounding_criterion
-
-    def prepare_targets(self, targets, images):
-        h_pad, w_pad = images.tensor.shape[-2:]
-        new_targets = []
-        for targets_per_image in targets:
-            # pad gt
-            gt_masks = targets_per_image.gt_masks
-            padded_masks = torch.zeros(
-                (gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device
-            )
-            padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
-            new_targets.append(
-                {
-                    "labels": targets_per_image.gt_classes,
-                    "masks": padded_masks,
-                }
-            )
-
-            if targets_per_image.has("original_gt_classes"):
-                # "labels" maybe binary, store original labels in as well
-                new_targets[-1]["original_labels"] = targets_per_image.original_gt_classes
-
-        return new_targets
-
-    def prepare_pseudo_targets(self, images):
-        h_pad, w_pad = images.tensor.shape[-2:]
-        new_targets = []
-        for _ in range(len(images)):
-            # pad gt
-            padded_masks = torch.zeros((0, h_pad, w_pad), dtype=torch.bool, device=images.device)
-            new_targets.append(
-                {
-                    "labels": torch.zeros(0, dtype=torch.long, device=images.device),
-                    "masks": padded_masks,
-                }
-            )
-
-        return new_targets
-
-    @property
-    def binary_classification(self):
-        return self.sem_seg_head.num_classes == 1
-
-    def cal_pred_open_logits(self, outputs):
+    def cal_pred_logits(self, outputs):
         # [B, Q, C]
-        mask_embed = outputs["mask_embed"]
-        # [K, C]
-        text_embed = outputs["text_embed"]
-
-        labels = outputs["labels"]
-
-        mask_embed = F.normalize(mask_embed, dim=-1)
-        text_embed = F.normalize(text_embed, dim=-1)
-        logit_scale = outputs["logit_scale"]
-
-        # [B, Q, K]
-        pred = logit_scale * (mask_embed @ text_embed.t())
-
-        pred = ensemble_logits_with_labels(pred, labels, ensemble_method="max")
-
-        return pred
+        pass  # function body is omitted
 
     def forward(self, batched_inputs):
         """
@@ -474,6 +454,137 @@ class CaptionODISE(ODISE):
                         values are ids for each segment.
                     segments_info (list[dict]): Describe each segment in `panoptic_seg`.
                         Each dict contains keys "id", "category_id", "isthing".
+        """
+        pass  # function body is omitted
+
+
+class CaptionODISE(ODISE):
+    def __init__(
+        self,
+        *,
+        word_head=None,
+        clip_head=None,
+        grounding_criterion=None,
+        **kwargs,
+    ):
+        """
+        初始化 CaptionODISE 模型。
+
+        参数:
+        word_head (nn.Module, 可选): 用于处理文本信息的模块，默认为 None。
+        clip_head (nn.Module, 可选): 基于 CLIP 的模块，默认为 None。
+        grounding_criterion (nn.Module, 可选): 用于计算 grounding 损失的准则，默认为 None。
+        **kwargs: 传递给父类 ODISE 的其他参数。
+        """
+        super().__init__(**kwargs)
+        self.word_head = word_head
+        self.clip_head = clip_head
+        self.grounding_criterion = grounding_criterion
+
+    def prepare_targets(self, targets, images):
+        """
+        准备训练目标，对目标掩码进行填充以匹配图像尺寸。
+
+        参数:
+        targets (list): 每个元素为一个图像的目标实例信息。
+        images (ImageList): 输入的图像列表。
+
+        返回:
+        list: 处理后的目标信息列表，包含填充后的掩码和类别标签。
+        """
+        h_pad, w_pad = images.tensor.shape[-2:]
+        new_targets = []
+        for targets_per_image in targets:
+            # pad gt
+            gt_masks = targets_per_image.gt_masks
+            padded_masks = torch.zeros(
+                (gt_masks.shape[0], h_pad, w_pad), dtype=gt_masks.dtype, device=gt_masks.device
+            )
+            padded_masks[:, : gt_masks.shape[1], : gt_masks.shape[2]] = gt_masks
+            new_targets.append(
+                {
+                    "labels": targets_per_image.gt_classes,
+                    "masks": padded_masks,
+                }
+            )
+
+            if targets_per_image.has("original_gt_classes"):
+                # "labels" maybe binary, store original labels in as well
+                new_targets[-1]["original_labels"] = targets_per_image.original_gt_classes
+
+        return new_targets
+
+    def prepare_pseudo_targets(self, images):
+        """
+        准备伪目标，用于没有真实标注的情况。
+
+        参数:
+        images (ImageList): 输入的图像列表。
+
+        返回:
+        list: 伪目标信息列表，包含全零的掩码和类别标签。
+        """
+        h_pad, w_pad = images.tensor.shape[-2:]
+        new_targets = []
+        for _ in range(len(images)):
+            # pad gt
+            padded_masks = torch.zeros((0, h_pad, w_pad), dtype=torch.bool, device=images.device)
+            new_targets.append(
+                {
+                    "labels": torch.zeros(0, dtype=torch.long, device=images.device),
+                    "masks": padded_masks,
+                }
+            )
+
+        return new_targets
+
+    @property
+    def binary_classification(self):
+        """
+        判断是否为二分类任务。
+
+        返回:
+        bool: 如果语义分割头的类别数为 1，则为二分类任务，返回 True；否则返回 False。
+        """
+        return self.sem_seg_head.num_classes == 1
+
+    def cal_pred_open_logits(self, outputs):
+        """
+        计算开放词汇的预测 logits。
+
+        参数:
+        outputs (dict): 模型的输出，包含掩码嵌入和文本嵌入等信息。
+
+        返回:
+        torch.Tensor: 开放词汇的预测 logits，形状为 [B, Q, K]。
+        """
+        # [B, Q, C]
+        mask_embed = outputs["mask_embed"]
+        # [K, C]
+        text_embed = outputs["text_embed"]
+
+        labels = outputs["labels"]
+
+        mask_embed = F.normalize(mask_embed, dim=-1)
+        text_embed = F.normalize(text_embed, dim=-1)
+        logit_scale = outputs["logit_scale"]
+
+        # [B, Q, K]
+        pred = logit_scale * (mask_embed @ text_embed.t())
+
+        pred = ensemble_logits_with_labels(pred, labels, ensemble_method="max")
+
+        return pred
+
+    def forward(self, batched_inputs):
+        """
+        前向传播函数，处理输入数据并返回预测结果。
+
+        参数:
+        batched_inputs (list): 批量输入数据，每个元素为一个字典，包含图像和目标信息。
+
+        返回:
+        list[dict]: 每个字典包含一张图像的预测结果，如语义分割、全景分割或实例分割结果。
         """
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
@@ -619,6 +730,7 @@ class CaptionODISE(ODISE):
             return processed_results
 
 
+
 class ODISEMultiScaleMaskedTransformerDecoder(MultiScaleMaskedTransformerDecoder):
     def __init__(
         self,
@@ -628,6 +740,15 @@ class ODISEMultiScaleMaskedTransformerDecoder(MultiScaleMaskedTransformerDecoder
         post_mask_embed=None,
         **kwargs,
     ):
+        """
+        初始化 ODISEMultiScaleMaskedTransformerDecoder 类的实例。
+
+        参数:
+        class_embed (nn.Module, 可选): 用于类别嵌入的模块，默认为 None。
+        mask_embed (nn.Module, 可选): 用于掩码嵌入的模块，默认为 None。
+        post_mask_embed (nn.Module, 可选): 后处理掩码嵌入的模块，默认为 None。
+        **kwargs: 传递给父类 MultiScaleMaskedTransformerDecoder 的其他参数。
+        """
         super().__init__(**kwargs)
         assert self.mask_classification
 
@@ -640,6 +761,18 @@ class ODISEMultiScaleMaskedTransformerDecoder(MultiScaleMaskedTransformerDecoder
         self.post_mask_embed = post_mask_embed
 
     def forward(self, x, mask_features, mask=None, *, inputs_dict=None):
+        """
+        前向传播函数，处理输入特征并生成预测结果。
+
+        参数:
+        x (list): 多尺度特征列表，每个元素是一个特征图。
+        mask_features (torch.Tensor): 掩码特征张量。
+        mask (torch.Tensor, 可选): 掩码张量，默认为 None。
+        inputs_dict (dict, 可选): 额外的输入字典，默认为 None。
+
+        返回:
+        dict: 包含预测结果的字典，如预测的类别 logits、掩码和辅助输出等。
+        """
         # x is a list of multi-scale feature
         assert len(x) == self.num_feature_levels
         src = []
@@ -729,6 +862,18 @@ class ODISEMultiScaleMaskedTransformerDecoder(MultiScaleMaskedTransformerDecoder
     def forward_prediction_heads(
         self, output, mask_features, attn_mask_target_size, *, inputs_dict=None
     ):
+        """
+        前向传播预测头函数，根据输入生成类别预测、掩码预测和注意力掩码。
+
+        参数:
+        output (torch.Tensor): 解码器的输出张量。
+        mask_features (torch.Tensor): 掩码特征张量。
+        attn_mask_target_size (tuple): 注意力掩码的目标尺寸。
+        inputs_dict (dict, 可选): 额外的输入字典，默认为 None。
+
+        返回:
+        tuple: 包含类别预测、掩码预测、注意力掩码和额外结果的元组。
+        """
         decoder_output = self.decoder_norm(output)
         decoder_output = decoder_output.transpose(0, 1)
         outputs_class = self.class_embed(decoder_output)
@@ -775,13 +920,19 @@ class ODISEMultiScaleMaskedTransformerDecoder(MultiScaleMaskedTransformerDecoder
 
         return outputs_class, outputs_mask, attn_mask, extra_results
 
-
 class MaskGroundingCriterion(nn.Module):
     def __init__(
         self,
         collect_mode: str = "concat",
         loss_weight=1.0,
     ):
+        """
+        初始化 MaskGroundingCriterion 类的实例。
+
+        参数:
+        collect_mode (str, 可选): 收集模式，可取值为 "concat", "diff" 或 None。默认为 "concat"。
+        loss_weight (float, 可选): 损失权重，默认为 1.0。
+        """
         super().__init__()
 
         self.collect_mode = collect_mode
@@ -797,10 +948,25 @@ class MaskGroundingCriterion(nn.Module):
             raise ValueError(f"collect_mode {collect_mode} is not supported")
 
     def extra_repr(self) -> str:
+        """
+        返回类的额外表示信息。
+
+        返回:
+        str: 包含收集模式和损失权重的字符串。
+        """
         return f"collect_mode={self.collect_mode}, \n" f"loss_weight={self.loss_weight} \n"
 
     def forward(self, outputs, targets):
+        """
+        前向传播函数，计算损失。
 
+        参数:
+        outputs (dict): 模型的输出，包含预测的相关信息。
+        targets (list): 目标标签列表，每个元素是一个字典。
+
+        返回:
+        dict: 包含计算得到的损失的字典。
+        """
         losses = {}
         losses.update(self.get_loss(outputs, targets))
 
@@ -813,7 +979,16 @@ class MaskGroundingCriterion(nn.Module):
         return losses
 
     def get_loss(self, outputs, targets):
+        """
+        计算掩码与单词嵌入之间的对比损失。
 
+        参数:
+        outputs (dict): 模型的输出，包含掩码嵌入、单词嵌入和 logit 缩放因子。
+        targets (list): 目标标签列表，每个元素是一个字典，包含单词有效掩码。
+
+        返回:
+        dict: 包含计算得到的损失的字典，键为 "loss_mask_word"。
+        """
         logit_scale = outputs["logit_scale"]
 
         rank = comm.get_rank() if self.collect_mode is not None else 0
@@ -909,10 +1084,27 @@ class MaskGroundingCriterion(nn.Module):
 
 class PseudoClassEmbed(nn.Module):
     def __init__(self, num_classes):
+        """
+        初始化 PseudoClassEmbed 类的实例。
+
+        参数:
+        num_classes (int): 类别的数量。
+        """
         super().__init__()
         self.num_classes = num_classes
 
     def forward(self, x):
+        """
+        前向传播函数，将输入 x 转换为类别预测的 logits。
+        此函数将所有预测视为前景，背景预测为零。
+
+        参数:
+        x (torch.Tensor): 输入张量。
+
+        返回:
+        torch.Tensor: 类别预测的 logits，形状为 (*x.shape[:-1], num_classes + 1)，
+                      其中前 num_classes 个维度表示前景类别，最后一个维度表示背景。
+        """
         # predict as foreground only
         fg_logits = torch.ones((*x.shape[:-1], self.num_classes), dtype=x.dtype, device=x.device)
         bg_logits = torch.zeros((*x.shape[:-1], 1), dtype=x.dtype, device=x.device)
@@ -926,19 +1118,37 @@ class MaskPooling(nn.Module):
         hard_pooling=True,
         mask_threshold=0.5,
     ):
+        """
+        初始化 MaskPooling 类的实例。
+
+        参数:
+        hard_pooling (bool, 可选): 是否使用硬池化，若为 True 则池化不可微，默认为 True。
+        mask_threshold (float, 可选): 掩码阈值，用于硬池化，默认为 0.5。
+        """
         super().__init__()
         # if the pooling is hard, it's not differentiable
         self.hard_pooling = hard_pooling
         self.mask_threshold = mask_threshold
 
     def extra_repr(self) -> str:
+        """
+        返回类实例的额外信息字符串。
+
+        返回:
+        str: 包含硬池化标志和掩码阈值的字符串。
+        """
         return f"hard_pooling={self.hard_pooling}\n" f"mask_threshold={self.mask_threshold}\n"
 
     def forward(self, x, mask):
         """
-        Args:
-            x: [B, C, H, W]
-            mask: [B, Q, H, W]
+        前向传播函数，对输入特征图根据掩码进行池化操作。
+
+        参数:
+        x (torch.Tensor): 输入特征图，形状为 [B, C, H, W]，其中 B 是批量大小，C 是通道数，H 和 W 分别是高度和宽度。
+        mask (torch.Tensor): 掩码张量，形状为 [B, Q, H, W]，其中 Q 是查询数量。
+
+        返回:
+        dict: 包含池化后特征的字典，键为 "mask_pooled_features"。
         """
 
         assert x.shape[-2:] == mask.shape[-2:]
@@ -971,6 +1181,15 @@ class PooledMaskEmbed(nn.Module):
         projection_dim,
         temperature=0.07,
     ):
+        """
+        初始化 PooledMaskEmbed 类的实例。
+
+        参数:
+        hidden_dim (int): 隐藏层的维度。
+        mask_dim (int): 掩码嵌入的维度。
+        projection_dim (int): 投影后的维度。
+        temperature (float, 可选): 温度参数，用于缩放 logit 比例，默认为 0.07。
+        """
         super().__init__()
         self.pool_proj = nn.Sequential(nn.LayerNorm(hidden_dim), nn.Linear(hidden_dim, hidden_dim))
         self.mask_embed = nn.Sequential(
@@ -983,12 +1202,21 @@ class PooledMaskEmbed(nn.Module):
 
     def forward(self, decoder_output, input_mask_embed, mask_features, pred_logits, pred_masks):
         """
-        Args:
-            decoder_output: [B, Q, C]
-            input_mask_embed: [B, Q, C]
-            mask_features: [B, C, H, W]
-            pred_logits: [B, Q, K+1]
-            pred_masks: [B, Q, H, W]
+        前向传播函数，对输入进行掩码池化、投影和嵌入操作。
+
+        参数:
+        decoder_output (torch.Tensor): 解码器的输出，形状为 [B, Q, C]，其中 B 是批量大小，Q 是查询数量，C 是通道数。
+        input_mask_embed (torch.Tensor): 输入的掩码嵌入，形状为 [B, Q, C]。
+        mask_features (torch.Tensor): 掩码特征，形状为 [B, C, H, W]，其中 H 和 W 分别是高度和宽度。
+        pred_logits (torch.Tensor): 预测的 logits，形状为 [B, Q, K+1]，K 是类别数量。
+        pred_masks (torch.Tensor): 预测的掩码，形状为 [B, Q, H, W]。
+
+        返回:
+        dict: 包含处理后的结果的字典，键如下：
+            - "mask_embed": 掩码嵌入，形状为 [B, Q, projection_dim]。
+            - "mask_pooled_features": 池化后的掩码特征，形状为 [B, Q, hidden_dim]。
+            - "logit_scale": 缩放后的 logit 比例。
+            - "outputs_mask": 如果存在，则为预测的掩码输出。
         """
         mask_pooled_x = self.mask_pooling(mask_features, pred_masks)
         mask_pooled_results = self.mask_pooling(mask_features, pred_masks)
@@ -1025,6 +1253,17 @@ class WordEmbed(nn.Module):
         num_words=8,
         prompt="photo",
     ):
+        """
+        初始化 WordEmbed 类的实例。
+
+        参数:
+        projection_dim (int): 投影维度。如果小于 0，则使用 nn.Identity 作为文本投影层。
+        clip_model_name (str, 可选): CLIP 模型的名称，默认为 "ViT-L-14"。
+        word_dropout (float, 可选): 单词丢弃率，默认为 0.0。
+        word_tags (str, 可选): 要提取的单词标签类型，默认为 "noun_phrase"。
+        num_words (int, 可选): 每个样本要提取的单词数量，默认为 8。
+        prompt (str, 可选): 提示词，默认为 "photo"。
+        """
         super().__init__()
 
         self.clip_model_name = clip_model_name
@@ -1052,6 +1291,12 @@ class WordEmbed(nn.Module):
         self.prompt = prompt
 
     def extra_repr(self) -> str:
+        """
+        返回类实例的额外信息字符串。
+
+        返回:
+        str: 包含 CLIP 模型名称、单词丢弃率、单词标签类型和提取单词数量的字符串。
+        """
         return (
             f"clip_model_name={self.clip_model_name},\n"
             f"word_dropout={self.word_dropout},\n"
@@ -1061,16 +1306,45 @@ class WordEmbed(nn.Module):
 
     @property
     def device(self):
+        """
+        获取当前模型所在的设备。
+
+        返回:
+        torch.device: 当前模型所在的设备。
+        """
         return self.clip.device
 
     def _open_state_dict(self):
+        """
+        获取开放状态字典，包含测试标签。
+
+        返回:
+        dict: 包含测试标签的字典。
+        """
         return {"test_labels": self.test_labels}
 
     def _save_open_state_dict(self, destination, prefix):
+        """
+        将开放状态字典保存到目标字典中。
+
+        参数:
+        destination (dict): 目标字典，用于保存开放状态。
+        prefix (str): 键的前缀。
+        """
         for k, v in self._open_state_dict().items():
             destination[prefix + k] = v
 
     def open_state_dict(self, destination=None, prefix=""):
+        """
+        获取开放状态字典，并将其保存到目标字典中。
+
+        参数:
+        destination (dict, 可选): 目标字典，用于保存开放状态。如果为 None，则创建一个新的 OrderedDict。
+        prefix (str, 可选): 键的前缀。
+
+        返回:
+        dict: 包含开放状态的目标字典。
+        """
         if destination is None:
             destination = OrderedDict()
         self._save_open_state_dict(destination, prefix)
@@ -1083,6 +1357,16 @@ class WordEmbed(nn.Module):
 
     @torch.no_grad()
     def build_text_embed(self, labels, verbose=False):
+        """
+        构建文本嵌入。
+
+        参数:
+        labels (list or str): 标签列表或单个标签。
+        verbose (bool, 可选): 是否打印详细信息，默认为 False。
+
+        返回:
+        torch.Tensor: 文本嵌入张量。
+        """
         return build_clip_text_embed(
             clip_model_name=self.clip.clip,
             labels=labels,
@@ -1090,6 +1374,15 @@ class WordEmbed(nn.Module):
         )
 
     def get_and_cache_test_text_embed(self, labels):
+        """
+        获取并缓存测试文本嵌入。
+
+        参数:
+        labels (list or str): 标签列表或单个标签。
+
+        返回:
+        torch.Tensor: 文本嵌入张量。
+        """
         labels = to_tuple(labels)
         if labels not in self._test_text_embed_dict:
             text_embed = self.build_text_embed(labels, verbose=True)
@@ -1102,6 +1395,16 @@ class WordEmbed(nn.Module):
         return text_embed
 
     def get_tag(self, caption, tags):
+        """
+        从给定的标题中提取指定标签的单词。
+
+        参数:
+        caption (str): 标题文本。
+        tags (list or str): 要提取的标签列表或单个标签。
+
+        返回:
+        list: 提取的单词列表。
+        """
         if not isinstance(tags, (list, tuple)):
             tags = [tags]
         ret = []
@@ -1112,6 +1415,16 @@ class WordEmbed(nn.Module):
         return ret
 
     def _get_phrase(self, caption, with_preposition):
+        """
+        从给定的标题中提取名词短语。
+
+        参数:
+        caption (str): 标题文本。
+        with_preposition (bool): 是否包含介词短语。
+
+        返回:
+        list: 提取的名词短语列表。
+        """
         if with_preposition:
             # Taken from Su Nam Kim Paper...
             grammar = r"""
@@ -1152,6 +1465,15 @@ class WordEmbed(nn.Module):
         return continuous_chunk
 
     def get_noun_phrase(self, caption):
+        """
+        从给定的标题中提取名词短语，包括有介词和无介词的情况。
+
+        参数:
+        caption (str): 标题文本。
+
+        返回:
+        list: 提取的名词短语列表。
+        """
         noun_phrase = []
         noun_phrase.extend(self._get_phrase(caption, with_preposition=False))
         noun_phrase.extend(self._get_phrase(caption, with_preposition=True))
@@ -1159,7 +1481,16 @@ class WordEmbed(nn.Module):
         return list(set(noun_phrase))
 
     def prepare_targets(self, captions, targets):
+        """
+        为目标数据准备单词和有效掩码。
 
+        参数:
+        captions (list): 标题列表。
+        targets (list): 目标数据列表。
+
+        返回:
+        list: 包含准备好的单词和有效掩码的目标数据列表。
+        """
         if targets is None:
             targets = [{} for _ in range(len(captions))]
 
@@ -1191,6 +1522,16 @@ class WordEmbed(nn.Module):
         return targets
 
     def forward(self, outputs, targets=None):
+        """
+        前向传播函数。
+
+        参数:
+        outputs (dict): 模型的输出。
+        targets (list, 可选): 目标数据列表。
+
+        返回:
+        dict: 包含单词嵌入或文本嵌入的字典。
+        """
         if self.training:
             words = [x["words"] for x in targets]
 
@@ -1224,6 +1565,15 @@ class CategoryEmbed(nn.Module):
         clip_model_name="ViT-L-14",
         prompt=None,
     ):
+        """
+        初始化 CategoryEmbed 类的实例。
+
+        参数:
+        labels (list): 类别标签列表。
+        projection_dim (int): 投影维度。如果小于 0，则使用 nn.Identity 作为文本投影层。
+        clip_model_name (str, 可选): CLIP 模型的名称，默认为 "ViT-L-14"。
+        prompt (str, 可选): 提示词，用于构建文本嵌入，默认为 None。
+        """
         super().__init__()
         self.labels = labels
 
@@ -1246,20 +1596,55 @@ class CategoryEmbed(nn.Module):
         self._test_text_embed_dict = dict()
 
     def extra_repr(self) -> str:
+        """
+        返回类实例的额外信息字符串。
+
+        返回:
+        str: 包含 CLIP 模型名称的字符串。
+        """
         return f"clip_model_name={self.clip_model_name},\n"
 
     @property
     def device(self):
+        """
+        获取当前模型所在的设备。
+
+        返回:
+        torch.device: 当前模型所在的设备。
+        """
         return self.clip.device
 
     def _open_state_dict(self):
+        """
+        获取开放状态字典，包含测试标签。
+
+        返回:
+        dict: 包含测试标签的字典。
+        """
         return {"test_labels": self.test_labels}
 
     def _save_open_state_dict(self, destination, prefix):
+        """
+        将开放状态字典保存到目标字典中。
+
+        参数:
+        destination (dict): 目标字典，用于保存开放状态。
+        prefix (str): 键的前缀。
+        """
         for k, v in self._open_state_dict().items():
             destination[prefix + k] = v
 
     def open_state_dict(self, destination=None, prefix=""):
+        """
+        获取开放状态字典，并将其保存到目标字典中。
+
+        参数:
+        destination (dict, 可选): 目标字典，用于保存开放状态。如果为 None，则创建一个新的 OrderedDict。
+        prefix (str, 可选): 键的前缀。
+
+        返回:
+        dict: 包含开放状态的目标字典。
+        """
         if destination is None:
             destination = OrderedDict()
         self._save_open_state_dict(destination, prefix)
@@ -1272,6 +1657,16 @@ class CategoryEmbed(nn.Module):
 
     @torch.no_grad()
     def build_text_embed(self, labels, verbose=False):
+        """
+        构建文本嵌入。
+
+        参数:
+        labels (list or str): 标签列表或单个标签。
+        verbose (bool, 可选): 是否打印详细信息，默认为 False。
+
+        返回:
+        torch.Tensor: 文本嵌入张量。
+        """
         return build_clip_text_embed(
             clip_model_name=self.clip.clip,
             labels=labels,
@@ -1279,6 +1674,15 @@ class CategoryEmbed(nn.Module):
         )
 
     def get_and_cache_test_text_embed(self, labels):
+        """
+        获取并缓存测试文本嵌入。
+
+        参数:
+        labels (list or str): 标签列表或单个标签。
+
+        返回:
+        torch.Tensor: 文本嵌入张量。
+        """
         labels = to_tuple(labels)
         if labels not in self._test_text_embed_dict:
             text_embed = self.build_text_embed(labels, verbose=True)
@@ -1288,6 +1692,16 @@ class CategoryEmbed(nn.Module):
         return text_embed
 
     def forward(self, outputs, targets=None):
+        """
+        前向传播函数。
+
+        参数:
+        outputs (dict): 模型的输出。
+        targets (list, 可选): 目标数据列表。
+
+        返回:
+        dict: 包含文本嵌入、空嵌入和标签的字典。
+        """
         if self.training:
 
             text_embed = self.text_proj(self.text_embed)
@@ -1306,7 +1720,6 @@ class CategoryEmbed(nn.Module):
 
             return {"text_embed": text_embed, "null_embed": null_embed, "labels": labels}
 
-
 class CLIPOpenClassEmbed(nn.Module):
     def __init__(
         self,
@@ -1318,6 +1731,18 @@ class CLIPOpenClassEmbed(nn.Module):
         temperature=0.07,
         ensemble_method="max",
     ):
+        """
+        初始化 CLIPOpenClassEmbed 类的实例。
+
+        参数:
+        labels (list): 类别标签列表。
+        hidden_dim (int): 隐藏层维度。
+        projection_modality (str, 可选): 投影模态，可选值为 "text" 或 "image"，默认为 "text"。
+        clip_model_name (str, 可选): CLIP 模型的名称，默认为 "ViT-L-14"。
+        with_null_embed (bool, 可选): 是否使用空嵌入，默认为 True。
+        temperature (float, 可选): 温度参数，默认为 0.07。
+        ensemble_method (str, 可选): 集成方法，可选值为 "max" 或 "mean"，默认为 "max"。
+        """
         super().__init__()
         self.labels = labels
         assert projection_modality in ["text", "image"]
@@ -1346,13 +1771,36 @@ class CLIPOpenClassEmbed(nn.Module):
         self._test_text_embed_dict = dict()
 
     def _open_state_dict(self):
+        """
+        获取开放状态字典，包含测试标签。
+
+        返回:
+        dict: 包含测试标签的字典。
+        """
         return {"test_labels": self.test_labels}
 
     def _save_open_state_dict(self, destination, prefix):
+        """
+        将开放状态字典保存到目标字典中。
+
+        参数:
+        destination (dict): 目标字典，用于保存开放状态。
+        prefix (str): 键的前缀。
+        """
         for k, v in self._open_state_dict().items():
             destination[prefix + k] = v
 
     def open_state_dict(self, destination=None, prefix=""):
+        """
+        获取开放状态字典，并将其保存到目标字典中。
+
+        参数:
+        destination (dict, 可选): 目标字典，用于保存开放状态。如果为 None，则创建一个新的 OrderedDict。
+        prefix (str, 可选): 键的前缀。
+
+        返回:
+        dict: 包含开放状态的目标字典。
+        """
         if destination is None:
             destination = OrderedDict()
         self._save_open_state_dict(destination, prefix)
@@ -1364,6 +1812,12 @@ class CLIPOpenClassEmbed(nn.Module):
         return destination
 
     def extra_repr(self):
+        """
+        返回类实例的额外信息字符串。
+
+        返回:
+        str: 包含 CLIP 模型名称、集成方法和投影模态的字符串。
+        """
         return (
             f"clip_model_name={self.clip_model_name}, \n"
             f"ensemble_method={self.ensemble_method}, \n"
@@ -1372,18 +1826,45 @@ class CLIPOpenClassEmbed(nn.Module):
 
     @torch.no_grad()
     def build_text_embed(self, labels):
+        """
+        构建文本嵌入。
+
+        参数:
+        labels (list or str): 标签列表或单个标签。
+
+        返回:
+        torch.Tensor: 文本嵌入张量。
+        """
         return build_clip_text_embed(
             clip_model_name=self.clip_model_name,
             labels=labels,
         )
 
     def get_and_cache_test_text_embed(self, labels):
+        """
+        获取并缓存测试文本嵌入。
+
+        参数:
+        labels (list or str): 标签列表或单个标签。
+
+        返回:
+        torch.Tensor: 文本嵌入张量。
+        """
         labels = to_tuple(labels)
         if labels not in self._test_text_embed_dict:
             self._test_text_embed_dict[labels] = self.build_text_embed(labels)
         return self._test_text_embed_dict[labels]
 
     def forward(self, x):
+        """
+        前向传播函数。
+
+        参数:
+        x (torch.Tensor): 输入张量。
+
+        返回:
+        torch.Tensor: 预测的 logits 张量。
+        """
         if self.projection_modality == "image":
             x = self.embed_projection(x)
         x = F.normalize(x, dim=-1)
@@ -1430,6 +1911,18 @@ class PoolingCLIPHead(WordEmbed):
         normalize_logits=True,
         bg_labels=None,
     ):
+        """
+        初始化 PoolingCLIPHead 类的实例。
+
+        参数:
+        clip_model_name (str, 可选): CLIP 模型的名称，默认为 "ViT-L-14-336"。
+        alpha (float, 可选): 用于基础类别的融合系数，默认为 0.35。
+        beta (float, 可选): 用于新类别的融合系数，默认为 0.65。
+        prompt (str, 可选): 提示词，用于构建文本嵌入，默认为 "photo"。
+        train_labels (list, 可选): 训练标签列表，默认为 None。
+        normalize_logits (bool, 可选): 是否对 logits 进行归一化，默认为 True。
+        bg_labels (str, 可选): 背景标签，默认为 None。
+        """
         super(WordEmbed, self).__init__()
         self.clip_model_name = clip_model_name
         # For ViT CLIP, we found MaskCLIP yields slightly better performance
@@ -1451,14 +1944,35 @@ class PoolingCLIPHead(WordEmbed):
         self.normalize_logits = normalize_logits
 
     def extra_repr(self) -> str:
+        """
+        返回类实例的额外信息字符串。
+
+        返回:
+        str: 包含 CLIP 模型名称的字符串。
+        """
         return f"clip_model_name={self.clip_model_name},\n"
 
     @property
     def with_bg(self):
+        """
+        判断是否存在背景标签。
+
+        返回:
+        bool: 如果存在背景标签则返回 True，否则返回 False。
+        """
         return self.bg_labels is not None
 
     def prepare_targets(self, outputs, targets):
+        """
+        准备目标数据，获取目标掩码嵌入。
 
+        参数:
+        outputs (dict): 模型的输出。
+        targets (list): 目标数据列表。
+
+        返回:
+        list: 更新后的目标数据列表，包含目标掩码嵌入。
+        """
         target_mask_embed = self.clip.get_mask_embed(outputs["images"], outputs["pred_masks"])
 
         for idx in range(len(targets)):
@@ -1467,6 +1981,16 @@ class PoolingCLIPHead(WordEmbed):
         return targets
 
     def forward(self, outputs, targets=None):
+        """
+        前向传播函数，仅支持推理模式。
+
+        参数:
+        outputs (dict): 模型的输出。
+        targets (list, 可选): 目标数据列表，默认为 None。
+
+        返回:
+        dict: 包含预测的开放类 logits 和标签的字典。
+        """
         assert not self.training, "PoolingCLIPHead only supports inference"
         assert targets is None
         assert self.test_labels is not None

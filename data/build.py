@@ -16,8 +16,19 @@ from detectron2.utils import comm
 
 
 def get_openseg_labels(dataset, prompt_engineered=False):
-    """get the labels in double list format,
-    e.g. [[background, bag, bed, ...], ["aeroplane"], ...]
+    """
+    获取指定数据集的标签，以双重列表格式返回。
+    例如：[[background, bag, bed, ...], ["aeroplane"], ...]
+
+    参数:
+    dataset (str): 数据集名称，必须是以下之一：
+        "ade20k_150", "ade20k_847", "coco_panoptic",
+        "pascal_context_59", "pascal_context_459",
+        "pascal_voc_21", "lvis_1203"
+    prompt_engineered (bool): 是否使用经过提示工程处理的标签文件，默认为 False
+
+    返回:
+    list: 双重列表格式的标签，每个子列表包含一个类别的标签名称
     """
 
     invalid_name = "invalid_class_id"
@@ -37,7 +48,7 @@ def get_openseg_labels(dataset, prompt_engineered=False):
         f"{dataset}_with_prompt_eng.txt" if prompt_engineered else f"{dataset}.txt",
     )
 
-    # read text in id:name format
+    # 以 id:name 格式读取文本
     with open(label_path, "r") as f:
         lines = f.read().splitlines()
 
@@ -52,6 +63,16 @@ def get_openseg_labels(dataset, prompt_engineered=False):
 
 
 def prompt_labels(labels, prompt):
+    """
+    根据指定的提示格式对标签进行处理。
+
+    参数:
+    labels (list): 双重列表格式的标签，每个子列表包含一个类别的标签名称
+    prompt (str or None): 提示格式，必须是 "a", "photo", "scene" 之一，若为 None 则不进行处理
+
+    返回:
+    list: 处理后的双重列表格式的标签
+    """
     if prompt is None:
         return labels
     labels = copy.deepcopy(labels)
@@ -79,6 +100,20 @@ def build_d2_train_dataloader(
     num_workers=0,
     sampler=None,
 ):
+    """
+    构建 Detectron2 的训练数据加载器。
+
+    参数:
+    dataset: 数据集对象
+    mapper: 数据映射器，用于将数据集样本转换为模型可接受的格式，默认为 None
+    total_batch_size (int or None): 全局总批量大小，若指定则必须能被 GPU 数量整除
+    local_batch_size (int or None): 本地批量大小，即每个 GPU 上的批量大小
+    num_workers (int): 数据加载的工作线程数，默认为 0
+    sampler: 数据采样器，默认为 None
+
+    返回:
+    DataLoader: Detectron2 的训练数据加载器
+    """
 
     assert (total_batch_size is None) != (
         local_batch_size is None
@@ -117,6 +152,19 @@ def build_d2_test_dataloader(
     local_batch_size=None,
     num_workers=0,
 ):
+    """
+    构建 Detectron2 的测试数据加载器。
+
+    参数:
+    dataset: 数据集对象
+    mapper: 数据映射器，用于将数据集样本转换为模型可接受的格式，默认为 None
+    total_batch_size (int or None): 全局总批量大小，若指定则必须能被 GPU 数量整除
+    local_batch_size (int or None): 本地批量大小，即每个 GPU 上的批量大小
+    num_workers (int): 数据加载的工作线程数，默认为 0
+
+    返回:
+    DataLoader: Detectron2 的测试数据加载器
+    """
 
     assert (total_batch_size is None) != (
         local_batch_size is None

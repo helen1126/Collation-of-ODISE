@@ -77,6 +77,12 @@ def get_git_hash(fallback="unknown", digits=None):
 
 
 def collect_env_info():
+    """
+    收集并返回当前环境的相关信息，包括系统平台、Python 版本、库版本、GPU 信息等。
+
+    返回:
+        str: 包含环境信息的格式化字符串。
+    """
     has_gpu = torch.cuda.is_available()  # true for both CUDA & ROCM
     torch_version = torch.__version__
 
@@ -229,7 +235,7 @@ def collect_env_info():
 
 if __name__ == "__main__":
     try:
-        from odise.utils.collect_env import collect_env_info as f
+        from utils.collect_env import collect_env_info as f
 
         print(f())
     except ImportError:

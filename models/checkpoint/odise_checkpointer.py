@@ -26,7 +26,13 @@ from utils.file_io import PathManager
 
 def _longest_common_prefix(names: List[str]) -> str:
     """
-    ["abc.zfg", "abc.zef"] -> "abc."
+    计算给定字符串列表中所有字符串的最长公共前缀，并在末尾添加一个点号。
+
+    参数:
+        names (List[str]): 输入的字符串列表，例如 ["abc.zfg", "abc.zef"]。
+
+    返回:
+        str: 最长公共前缀字符串，末尾带有一个点号，例如 "abc."。
     """
     names = [n.split(".") for n in names]
     m1, m2 = min(names), max(names)
@@ -43,6 +49,15 @@ def _longest_common_prefix(names: List[str]) -> str:
 
 
 def group_by_prefix(names):
+    """
+    根据字符串的第一个点号之前的部分对输入的字符串列表进行分组。
+
+    参数:
+        names (list): 输入的字符串列表。
+
+    返回:
+        defaultdict: 一个字典，键是字符串的第一个点号之前的部分，值是具有相同前缀的字符串列表。
+    """
     grouped_names = defaultdict(list)
 
     for name in names:
@@ -53,13 +68,30 @@ def group_by_prefix(names):
 
 class ODISECheckpointer(DetectionCheckpointer):
     def __init__(self, model, save_dir="", *, save_to_disk=None, **checkpointables):
+        """
+        初始化 ODISECheckpointer 类。
+
+        参数:
+            model: 要进行检查点操作的模型。
+            save_dir (str): 保存检查点的目录，默认为空字符串。
+            save_to_disk: 是否将检查点保存到磁盘，默认为 None。
+            **checkpointables: 其他可检查点化的对象。
+        """
         super().__init__(
             model=model, save_dir=save_dir, save_to_disk=save_to_disk, **checkpointables
         )
         self.path_manager = PathManager
 
     def _load_model(self, checkpoint):
+        """
+        加载模型的状态字典，并处理不兼容的键。
 
+        参数:
+            checkpoint (dict): 包含模型状态字典的检查点字典。
+
+        返回:
+            IncompatibleKeys: 一个包含不兼容键信息的对象。
+        """
         if hasattr(self.model, "preprocess_state_dict"):
             self.logger.info("Preprocessing model state_dict")
             checkpoint["model"] = self.model.preprocess_state_dict(checkpoint["model"])
@@ -120,8 +152,13 @@ class ODISECheckpointer(DetectionCheckpointer):
     @staticmethod
     def has_checkpoint_in_dir(save_dir) -> bool:
         """
-        Returns:
-            bool: whether a checkpoint exists in the target directory.
+        检查指定目录中是否存在检查点文件。
+
+        参数:
+            save_dir (str): 要检查的目录路径。
+
+        返回:
+            bool: 如果目录中存在检查点文件，则返回 True；否则返回 False。
         """
         save_file = osp.join(save_dir, "last_checkpoint")
         return osp.exists(save_file)
@@ -129,12 +166,30 @@ class ODISECheckpointer(DetectionCheckpointer):
 
 class LdmCheckpointer(Checkpointer):
     def __init__(self, model, save_dir="", *, save_to_disk=None, **checkpointables):
+        """
+        初始化 LdmCheckpointer 类。
+
+        参数:
+            model: 要进行检查点操作的模型。
+            save_dir (str): 保存检查点的目录，默认为空字符串。
+            save_to_disk: 是否将检查点保存到磁盘，默认为 None。
+            **checkpointables: 其他可检查点化的对象。
+        """
         super().__init__(
             model=model, save_dir=save_dir, save_to_disk=save_to_disk, **checkpointables
         )
         self.path_manager = PathManager
 
     def _load_model(self, checkpoint):
+        """
+        加载模型的状态字典，并将检查点字典中的 "state_dict" 键重命名为 "model"。
+
+        参数:
+            checkpoint (dict): 包含模型状态字典的检查点字典。
+
+        返回:
+            IncompatibleKeys: 一个包含不兼容键信息的对象。
+        """
         # rename the keys in checkpoint
         checkpoint["model"] = checkpoint.pop("state_dict")
         return super()._load_model(checkpoint)

@@ -22,10 +22,17 @@ import torch.distributed as dist
 
 def create_named_schedule_sampler(name, diffusion):
     """
-    Create a ScheduleSampler from a library of pre-defined samplers.
+    根据给定的名称和扩散对象，从预定义的采样器库中创建一个 ScheduleSampler 实例。
 
-    :param name: the name of the sampler.
-    :param diffusion: the diffusion object to sample for.
+    参数:
+        name (str): 采样器的名称。支持的名称有 "uniform" 和 "loss-second-moment"。
+        diffusion: 用于采样的扩散对象。
+
+    返回:
+        ScheduleSampler: 创建的采样器实例。
+
+    异常:
+        NotImplementedError: 如果提供的名称不是预定义的采样器名称，则抛出此异常。
     """
     if name == "uniform":
         return UniformSampler(diffusion)
@@ -37,32 +44,35 @@ def create_named_schedule_sampler(name, diffusion):
 
 class ScheduleSampler(ABC):
     """
-    A distribution over timesteps in the diffusion process, intended to reduce
-    variance of the objective.
+    一个抽象基类，代表扩散过程中时间步的分布采样器，旨在减少目标函数的方差。
 
-    By default, samplers perform unbiased importance sampling, in which the
-    objective's mean is unchanged.
-    However, subclasses may override sample() to change how the resampled
-    terms are reweighted, allowing for actual changes in the objective.
+    默认情况下，采样器执行无偏重要性采样，即目标函数的均值保持不变。
+    但是，子类可以重写 sample() 方法来改变重采样项的加权方式，从而改变目标函数。
     """
 
     @abstractmethod
     def weights(self):
         """
-        Get a numpy array of weights, one per diffusion step.
+        获取一个 numpy 数组，其中每个元素对应一个扩散步骤的权重。
 
-        The weights needn't be normalized, but must be positive.
+        权重不需要归一化，但必须为正数。
+
+        返回:
+            numpy.ndarray: 包含每个扩散步骤权重的数组。
         """
 
     def sample(self, batch_size, device):
         """
-        Importance-sample timesteps for a batch.
+        为一个批次的样本进行重要性采样时间步。
 
-        :param batch_size: the number of timesteps.
-        :param device: the torch device to save to.
-        :return: a tuple (timesteps, weights):
-                 - timesteps: a tensor of timestep indices.
-                 - weights: a tensor of weights to scale the resulting losses.
+        参数:
+            batch_size (int): 要采样的时间步数量。
+            device: 用于保存采样结果的 torch 设备。
+
+        返回:
+            tuple: 一个包含两个元素的元组 (timesteps, weights)
+                - timesteps (torch.Tensor): 采样得到的时间步索引的张量。
+                - weights (torch.Tensor): 用于缩放最终损失的权重张量。
         """
         w = self.weights()
         p = w / np.sum(w)
@@ -75,25 +85,36 @@ class ScheduleSampler(ABC):
 
 class UniformSampler(ScheduleSampler):
     def __init__(self, diffusion):
+        """
+        初始化均匀采样器。
+
+        参数:
+            diffusion: 用于采样的扩散对象。
+        """
         self.diffusion = diffusion
         self._weights = np.ones([diffusion.num_timesteps])
 
     def weights(self):
+        """
+        获取均匀采样器的权重。
+
+        返回:
+            numpy.ndarray: 包含每个扩散步骤权重的数组，所有权重都为 1。
+        """
         return self._weights
 
 
 class LossAwareSampler(ScheduleSampler):
     def update_with_local_losses(self, local_ts, local_losses):
         """
-        Update the reweighting using losses from a model.
+        使用模型的局部损失更新重加权。
 
-        Call this method from each rank with a batch of timesteps and the
-        corresponding losses for each of those timesteps.
-        This method will perform synchronization to make sure all of the ranks
-        maintain the exact same reweighting.
+        每个进程都应该调用此方法，传入一批时间步和对应的损失。
+        此方法会进行同步，确保所有进程保持完全相同的重加权。
 
-        :param local_ts: an integer Tensor of timesteps.
-        :param local_losses: a 1D Tensor of losses.
+        参数:
+            local_ts (torch.Tensor): 一个整数张量，包含局部时间步。
+            local_losses (torch.Tensor): 一个一维张量，包含每个时间步对应的损失。
         """
         batch_sizes = [
             th.tensor([0], dtype=th.int32, device=local_ts.device)
@@ -119,23 +140,28 @@ class LossAwareSampler(ScheduleSampler):
     @abstractmethod
     def update_with_all_losses(self, ts, losses):
         """
-        Update the reweighting using losses from a model.
+        使用模型的损失更新重加权。
 
-        Sub-classes should override this method to update the reweighting
-        using losses from the model.
+        子类应该重写此方法，以使用模型的损失更新重加权。
+        此方法直接更新重加权，而不进行进程间的同步。它由 update_with_local_losses 方法从所有进程调用，传入相同的参数。
+        因此，它应该具有确定性的行为，以确保所有进程的状态一致。
 
-        This method directly updates the reweighting without synchronizing
-        between workers. It is called by update_with_local_losses from all
-        ranks with identical arguments. Thus, it should have deterministic
-        behavior to maintain state across workers.
-
-        :param ts: a list of int timesteps.
-        :param losses: a list of float losses, one per timestep.
+        参数:
+            ts (list): 一个整数列表，包含时间步。
+            losses (list): 一个浮点数列表，包含每个时间步对应的损失。
         """
 
 
 class LossSecondMomentResampler(LossAwareSampler):
     def __init__(self, diffusion, history_per_term=10, uniform_prob=0.001):
+        """
+        初始化基于损失二阶矩的重采样器。
+
+        参数:
+            diffusion: 用于采样的扩散对象。
+            history_per_term (int, 可选): 每个时间步保存的损失历史数量。默认为 10。
+            uniform_prob (float, 可选): 均匀采样的概率。默认为 0.001。
+        """
         self.diffusion = diffusion
         self.history_per_term = history_per_term
         self.uniform_prob = uniform_prob
@@ -143,6 +169,15 @@ class LossSecondMomentResampler(LossAwareSampler):
         self._loss_counts = np.zeros([diffusion.num_timesteps], dtype=np.int)
 
     def weights(self):
+        """
+        获取基于损失二阶矩的重采样器的权重。
+
+        如果损失历史尚未填满，则返回均匀权重。
+        否则，计算损失的二阶矩，并结合均匀采样概率计算权重。
+
+        返回:
+            numpy.ndarray: 包含每个扩散步骤权重的数组。
+        """
         if not self._warmed_up():
             return np.ones([self.diffusion.num_timesteps], dtype=np.float64)
         weights = np.sqrt(np.mean(self._loss_history**2, axis=-1))
@@ -152,6 +187,16 @@ class LossSecondMomentResampler(LossAwareSampler):
         return weights
 
     def update_with_all_losses(self, ts, losses):
+        """
+        使用所有损失更新损失历史。
+
+        如果某个时间步的损失历史已满，则移除最旧的损失项。
+        否则，将新的损失添加到损失历史中。
+
+        参数:
+            ts (list): 一个整数列表，包含时间步。
+            losses (list): 一个浮点数列表，包含每个时间步对应的损失。
+        """
         for t, loss in zip(ts, losses):
             if self._loss_counts[t] == self.history_per_term:
                 # Shift out the oldest loss term.
@@ -162,4 +207,10 @@ class LossSecondMomentResampler(LossAwareSampler):
                 self._loss_counts[t] += 1
 
     def _warmed_up(self):
+        """
+        检查损失历史是否已经填满。
+
+        返回:
+            bool: 如果所有时间步的损失历史都已填满，则返回 True；否则返回 False。
+        """
         return (self._loss_counts == self.history_per_term).all()
